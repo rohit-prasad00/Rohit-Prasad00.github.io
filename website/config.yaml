@@ -1,0 +1,32 @@
+baseurl: /
+languageCode: en-US
+title: Rohit Prasad
+disqusShortname: ''
+googleAnalytics: ''
+theme: hugo-sustain
+permalinks:
+  post: /post/:year/:month/:day/:slug
+params:
+  about: My interests include medicine, data science, public policy.
+  author: Rohit Prasad
+  avatar: mypic.jpg
+  custom_css: []
+  custom_js: []
+  occupation: soon-to-be Medical Student
+  social:
+    Email: rohit.prasad@utexas.edu
+    LinkedIn: rohit-prasad-48446b16a
+menu:
+  main:
+    - identifier: blog
+      name: blog
+      url: /post/
+      weight: 100
+    - identifier: projects
+      name: projects
+      url: /projects/
+      weight: 200
+    - identifier: resume
+      name: resume
+      url: /resume/
+      weight: 300

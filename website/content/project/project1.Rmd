@@ -1,0 +1,167 @@
+---
+title: "Project1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Exploration of Crime Statistics, SAT Data, and Teen Pregnancy (and other social information) Rates by State
+## SDS 322E
+## Rohit Prasad (rkp679), Joonmo Chun (jcc5922), Ashlynn Barrera (anb4329)
+
+### Introduction 
+We have chosen three datasets for this project, all of which originate from https://vincentarelbundock.github.io/. The three datasets include: SAT: SAT data assembled by state to show the relationship between SAT scores and measures of educational expenditures. TeenPregnancy: State teen pregnancy rates, among other social factors, in the US. USArrests: Statistics concerning arrests per 100,000 residents for assault, murder, and rape in the US states in 1973. Each dataset was downloaded from the source in csv format.
+
+We chose these datasets because we found they could be grouped by the variable “state”, and we wanted to explore whether there was any relationships between performance on the SAT and social factors, including crime rates and teen pregnancy rates. We found it interesting to consider the potential relationships between crime, teen pregnancy, and public education expenditures as that could potentially inform future policymaking on public education. We potentially hypothesize that greater spending on public education would lead to reduced crime rates and reduced teen pregnancy rates. This relationship may be expected due to the fact that more comprehensive education may discourage crime and may inform proper behaviors to avoid teen pregnancy.
+
+### Load Packages
+```{r}
+# Load necessary packages
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+```
+
+### Reading Data
+```{r}
+# Read in the three datasets
+SAT <- read.csv("SAT.csv")
+TeenPregnancy <- read.csv("TeenPregnancy.csv")
+USArrests <- read.csv("USArrests.csv")
+```
+
+### Cleaning Data and Standardizing Variables
+```{r}
+# Drop Unnecessary Columns and Standardize State Variable
+SAT <- SAT[,-c(1)]
+colnames(SAT)[1] <- "State"
+TeenPregnancy <- TeenPregnancy[-c(1)]
+TeenPregnancy$State <- state.name[match(TeenPregnancy$State, state.abb)] # Convert State abbreviations to state names
+colnames(USArrests)[1] <- "State"
+```
+
+### Joining Datasets
+```{r}
+# Join Datasets
+satAndPregnancy <- full_join(SAT, TeenPregnancy, by = "State")
+totalData <- full_join(satAndPregnancy, USArrests, by = "State")
+```
+First, we full joined the SAT dataset with the Teen pregnancy and created a combined version. Next, we full joined the temporarily combined dataset (SAT and pregnancy) with the last dataset (US Arrests) and created a totalData dataset. There are 50 observations per dataset, 50 unique IDs per dataset, and 0 IDs that appear in one but not another and IDs in common. In addition, there were 0 observations that were added or dropped.
+
+### Creating Categorical Variable
+```{r}
+# Create SAT Participation Column
+totalData$satPart <- ifelse(totalData$frac > 50,"Majority", "Minority")
+```
+
+### Data  Tidying
+```{r}
+# Undtidying Data
+totalData <- totalData %>%
+  pivot_longer(cols = c('Murder', 'Assault', 'Rape'),
+               names_to = "crimeType", 
+               values_to = "crimeArrests")
+
+# Tidying Data
+totalData <- totalData %>%
+  pivot_wider(names_from = crimeType, values_from = crimeArrests)
+```
+Our initial dataset was tidy, thus we un-tidied the columns of murder, assault, and rape and combined them into a vague crime type. From here, we used the function pivot_wider to reassign specific values for each crime arrest.
+
+### Data  Wrangling
+```{r}
+# Identify meean teen pregnancy rate by SAT Participation rates
+totalData %>%
+  group_by(satPart) %>% # Group by SAT Participation Proportion
+  summarize(meanPreg = mean(Teen)) # Summarize Mean Teen Pregnancy Rate by Group
+```
+The mean teen pregnancy rate per 1,000 was greater for states with minority participation in the SAT (<50% participation for the SAT).
+
+```{r}
+totalData %>%
+  select(CivilWar, Murder) %>% # Select Civil War and Murder Variables
+  group_by(CivilWar) %>% # Group By Civil War Status
+  summarize(meanMurder = mean(Murder)) %>% # Calculate Mean Murder
+  arrange(desc(meanMurder)) # Arrange by descending mean
+```
+The mean murder arrests per 100,000 was greatest in states that formerly had Confederate status, second greatest in states that were formerly border states, third greatest in Other states (no affiliation to the Civil War), and lowest in the states that were formerly known as Union states.
+
+```{r}
+# Find Teen Pregnancy Rate by SAT Math to Varbal Ratio
+totalData %>%
+  mutate(satRatio = math / verbal) %>% # Use mutate to calculate math to verbal SAT score ratio by state
+  filter(satRatio > mean(satRatio)) %>% # Filter for states with SAT ratios above the mean ratio
+  select(State, Teen) %>% # Select for State and Teen Pregnancy Variables
+  arrange(desc(Teen)) # Arreange by Teen Pregnancy descending
+```
+After filtering out states with greater SAT ratios (Math score/ Verbal score) than the mean SAT ratio, we found that, out of the 21 states, Texas had the highest amount of teen pregnancies per 1,000 and Minnesota had the lowest amount of teen pregnancies per 1,000.
+
+### Summary Statistics
+```{r}
+# Compute Summary Statistics of Numeric Variables
+summary(totalData$Murder) # Summarize Murder Variable
+summary(totalData$sat) # Summarize SAT Variable
+summary(totalData$Church) # Summarize Church Attendance Variable
+```
+Within the Murder subsection of our total dataset (all US States), we found a minimum value of 0.8 murders per 100,000, the respective 1st and 3rd quartiles, a median of 7.25 murders per 100,000, a mean of 7.788 murders per 100,000, and a maximum of 17.4 murder per 100,000. Within the SAT subsection of our total dataset (all US States), we found a minimum SAT score value of 844, the respective 1st and 3rd quartiles, a median SAT score of 945, a mean SAT score of 965.9, and a maximum SAT score of 1107. Within the church subsection (all US States), we found a minimum percentage of church go-ers at 17 percent, the respective 1st and 3rd quartiles, a median percentage of church go-ers at 32 percent, a mean percentage of church go-ers at 32.62 percent, and a maximum percentage of church go-ers at 51 percent.
+
+```{r}
+# Compute Summary Statistics of Categorical Variables
+table(totalData$CivilWar) # Summarize Civil War Variable
+table(totalData$satPart) # Summarize SAT Participation Variable
+```
+From the categorical variables we were given and created, we found that there were 3 border states, 11 confederate states, 15 other states, and 21 union states to equate to all 50 US states. In our other categorical dataset, we found that 18 states fell into the majority (more than 50 percent participation on the SAT) and 32 states fell into the minority (less than 50 percent participation on the SAT).
+
+### Visualizations
+```{r}
+# Visualize Expenditures vs Teen Pregnancy in Scatterplot
+totalData %>%
+  ggplot(aes(x = expend, y = Teen)) + # ggplot with expenditures on x-axis and teen pregnancy on y-axis
+  geom_point() +  # Create a scatterplot
+  geom_smooth(method = "lm") + # Add a linear regression line
+  theme(axis.text = element_text(colour = "yellow"), plot.background = element_rect(fill = "hot pink")) + # Change colors using theme
+  scale_x_continuous(n.breaks = 10) + # Specify breaks in x-axis
+  xlab("Public School Expenditure per Student (in Thousands of Dollars)") + # Change x-axis label
+  ylab("Number of Pregnancies per 1000 Teenage Girls") + # Change y-axis label
+  ggtitle("Public School Expenditures vs. Teen Pregnancy Rates of US States") # Change plot title
+```
+
+We analyzed public school expenditure per student in (thousands of dollars) against the number of pregnancies (per 1,000 teenage girls). We utilized a scatterplot and a linear regression model to see a subtle negative correlation between the two variables. Thus, we can assume that as public school expenditure per student increases, the relative number of pregnancies per 1,000 teenage girls decreases. This was in line with our initial expectations.
+
+```{r}
+# Visualize Civil War Participation vs SAT Scores in Barplots
+totalData %>%
+  ggplot(aes(x = CivilWar, y = sat)) + # ggplot with Civil War Role on x-axis and SAT Score distirbution on y-axis
+  geom_bar(stat = "summary", fun = "mean") + # Generate barplot using summary stat and mean function
+  scale_y_continuous(n.breaks = 5) + # Set y-axis breaks
+  scale_x_discrete(labels = c("Border", "Confederate", "Other", "Union")) + # Rename x-axis categories
+  geom_errorbar(stat = "summary", width = 0.5) + # Add error bars using summary stat
+  theme(axis.text = element_text(colour = "dark blue"), plot.background = element_rect(fill = "sky blue")) + # Set colors using theme
+  xlab("State Role in Civil War") + # Set x-axis label
+  ylab("Mean Total SAT Score") + # Set y-axis label
+  ggtitle("Role in Civil War vs. Mean SAT Score of US States") # Set plot title
+```
+
+We analyzed state role in Civil War against the mean total SAT score. We utilized a bar chart and incorporated error bars to see the relative differences across all 50 states. We felt a bar chart would best encapsulate testing a categorical variable against a numeric variable. We took note of how border states had the highest total SAT score, followed by states labeled "Other," followed by union states, and lastly, confederate states.
+
+```{r}
+# Visualize SAT Participation Rate vs School Expenditure in Boxplot
+totalData %>%
+  ggplot(aes(x = satPart, y = expend)) + # ggplot with SAT Participation on x-axis and School Expenditure on y-axis
+  geom_boxplot() + # generate boxplot
+  scale_y_continuous(n.breaks = 10) + # Specify y-axis scale breaks
+  theme(axis.text = element_text(colour = "Blue"), plot.background = element_rect(fill = "#B9FFC8")) + # Use theme to change colors
+  xlab("Proportion of Eligible Students Taking the SAT") + # Set x-axis label
+  ylab("Public School Expenditure per Student (in Thousands of Dollars)") + # Set y-axis label
+  ggtitle("SAT Participation vs Public School Expenditure of US States") # Set plot title
+ 
+```
+
+We analyzed the proportion of eligible students taking the SAT against public school expenditure per student in (thousands of dollars). We utilized a boxplot to best visualize our data and saw that when the proportion of eligible students taking the SAT was in the majority (>50% participation), the public school expenditure per student also increased on average. To contrast, the minority proportion of eligible students taking the SAT had on average a lower public school expenditure per student (in thousands of dollars).
+
+### References
+Data was downloaded in csv format from https://vincentarelbundock.github.io/. Crime rate data was part of the USArrests package (McNeil, D. R. (1977) Interactive Data Analysis. New York: Wiley). SAT data was part of the SAT package (Deborah Lynn Guber, "Getting what you pay for: the debate over equity in public school expenditures" (1999), Journal of Statistics Education 7(2)). Teen pregnancy data was part of the TeenPregnancy package (Guttmacher Institute, via Tanya Lewis (5 May 2014) "Teen pregnancy rates by state," https://www.livescience.com).
+
+### Group Work
+All members contributed equally to analysis. Rohit created the first visualization. Joonmo created the second visualization. Ashlynn created the third visualization. Data joining, wrangling, and summarization was conducted collaboratively.

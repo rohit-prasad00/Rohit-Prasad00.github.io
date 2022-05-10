@@ -1,0 +1,236 @@
+---
+title: "Project2"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exploration of Crime Statistics, SAT Data, and Teen Pregnancy (and other social information) Rates by State
+## SDS 322E
+## Rohit Prasad (rkp679), Joonmo Chun (jcc5922), Ashlynn Barrera (anb4329)
+
+### Introduction 
+We have compiled three datasets from https://vincentarelbundock.github.io/ and compiled them into a csvnfile. Specifically, we used SAT (a collection of data showcasing the relationship between SAT scores and educational expenditures), TeenPregnancy (a collection of data showcasing state teen pregnancy rates and social factors), and USArrests (a collection of data showcasing arrests per 100,000 residents for assault, murder, and rape in the US in 1973).
+
+Similar to our first report, we chose these datasets due to them each having a common variable, “state.” From here, we wanted to explore the relationships that exist between SAT scores and social factors, including crime rates and teen pregnancy rates. In particular, we hypothesized that if possible relationships do in fact persist across differing variables, then necessary future policymaking on public education could be reformed to be more equitable and fair. Here, we hypothesize that the greater the spending is on public education, the lower the crime rates and teen pregnancy would be for that respective state. This relationship is expected, for more comprehensive education may discourage petty crimes, poor behavior, and teen pregnancies from happening. We also expect a state's membership in the Union or Confederacy during the Civil War to be correlated with modern-day measures of social spending, particularly on education.
+
+To begin, we full-joined the SAT dataset with the TeenPregnancy dataset and created a new version of collective data. Next, we full-joined the newly-created SAT dataset + TeenPregnancy dataset with the USArrests dataset to create ‘totalData’ dataset. Now, grouped across a similar ID variable, state name, we observed no odd data points in need of addition or deletion and continued tidying and experimenting on.
+
+### Load Packages
+```{r message=TRUE, warning=FALSE, include=FALSE}
+# Load necessary packages
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(psych)
+library(factoextra)
+library(cluster)
+library(GGally)
+library(tidyverse)
+library(plotROC)
+library(caret)
+```
+
+### Data Loading and Preparation
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Read in the three datasets
+SAT <- read.csv("SAT.csv")
+TeenPregnancy <- read.csv("TeenPregnancy.csv")
+USArrests <- read.csv("USArrests.csv")
+
+# Drop Unnecessary Columns and Standardize State Variable
+SAT <- SAT[,-c(1)]
+colnames(SAT)[1] <- "State"
+TeenPregnancy <- TeenPregnancy[-c(1)]
+TeenPregnancy$State <- state.name[match(TeenPregnancy$State, state.abb)] # Convert State abbreviations to state names
+colnames(USArrests)[1] <- "State"
+
+# Join Datasets
+satAndPregnancy <- full_join(SAT, TeenPregnancy, by = "State")
+totalData <- full_join(satAndPregnancy, USArrests, by = "State")
+
+# Create SAT Participation Column
+totalData$satPart <- ifelse(totalData$frac > 50,"Majority", "Minority")
+
+# Store original data for later use
+totalDataClassification <- totalData
+```
+
+### Exploratory Data Analysis
+```{r include=FALSE}
+# Build a correlation matrix between all numeric variables
+totalData_num <- totalData %>%
+  select_if(is.numeric) 
+cor(totalData_num, use = "pairwise.complete.obs")
+```
+
+```{r message=FALSE, warning=FALSE}
+# Generate univariate and bivariate graphs with correlation matrix
+pairs.panels(totalData_num, 
+             method = "pearson", # correlation coefficient method
+             hist.col = "blue", # color of histogram 
+             smooth = FALSE, density = FALSE, ellipses = FALSE)
+```
+
+We created a correlation matrix and found that the pairs of variables that are most closely correlated to one another are verbal SAT score to overall SAT score, and math SAT score to overall SAT score, both having a correlation coefficient of 0.99. On the other hand, the pair of variables that are least correlated to each other are the average estimated salary for teachers in each state and the student-teacher ratio of public schools in each state, which have a correlation coefficient of 0.00. Now, some trends that are apparent include high correlations between the percentage of all eligible students taking the SAT with both verbal SAT scores and the estimated average salary of teachers by state, as well as high correlations between the verbal and math SAT scores.
+
+### PAM Clustering of Variables
+```{r message=FALSE, warning=FALSE}
+# Prepare data (select variables, scale them)
+totalData4 <- totalData %>% 
+  select(-c(State, CivilWar, satPart)) %>%
+  scale
+
+# Use Silhouette to identify best number of clusters
+fviz_nbclust(totalData4, pam, method = "silhouette")
+
+# Apply a clustering algorithm using the optimal cluster number
+pam_results <- totalData4 %>%
+  pam(k = 7)
+
+# Save cluster assignment as a column in your dataset
+totalData_pam <- totalData %>%
+  mutate(cluster = as.factor(pam_results$clustering))
+
+# Visualize the clusters after dimension reduction
+fviz_cluster(pam_results, data = totalData, 
+             shape = totalData$CivilWar) +
+  geom_point(aes(shape = totalData$CivilWar)) +
+  guides(shape = guide_legend(title = "shape"))
+
+# Finding means of each variable for each cluster
+totalData_pam %>%
+  group_by(cluster) %>%
+  summarize_if(is.numeric, mean, na.rm = T)
+
+# Statistics for categorical variables: proportions in each cluster
+prop.table(table(totalData_pam$cluster, totalData_pam$CivilWar), margin = 1)
+
+# Statistics for categorical variables: proportions of each civil war group
+prop.table(table(totalData_pam$cluster, totalData_pam$CivilWar), margin = 2)
+
+# Look at final medoids
+totalData[pam_results$id.med,]
+
+```
+
+We first prepped our dataset in order to perform PAM on our ‘totalData’ dataset. From here, we utilized a clustering algorithm (based on silhouette width) in order to identify the ideal amount of clusters to utilize, which in our case was 7. Next, we saved the cluster assignment as a column in our dataset and then visualized our 7 clusters. After visualizing in a 2-dimension plot with the fviz_cluster function, it appeared that dimension 2 explained the greatest variance across states which were part of the confederacy versus the union in the civil war. 
+
+Calculating the statistics for Civil War status provided information on the relationship between that status and membership in a certain cluster. For example, we found that the proportion of states in the first cluster was 0.22 border states, 0.55 confederate states, 0.22 other states, and 0.00 union states. Next, we assessed the proportion of each civil war group against the clusters; for example, we found that border states distributed 0.66 proportionally in cluster 1 and 0.33 proportionally in cluster 3.
+
+The medoids, or the observation at the center, was calculated for each cluster. Those observations were Alabama (Cluster 1), Maryland (Cluster 2), Ohio (Cluster 3), Rhode Island (Cluster 4), South Carolina (Cluster 5), Iowa (Cluster 6), and Maine (Cluster 7).
+
+### Dimensionality Reduction
+```{r message=FALSE, warning=FALSE}
+# Prepare the dataset
+totalData <- totalData %>% 
+  select(is.numeric) %>%
+  # Scale the variables
+  scale %>%
+  as.data.frame
+head(totalData)
+
+# Compare to PCA performed with the function prcomp()
+pca <- totalData %>%
+  prcomp()
+
+# Look at percentage of variance explained for each PC in a table
+get_eigenvalue(pca)
+
+# Visualize percentage of variance explained for each PC in a scree plot
+fviz_eig(pca, addlabels = TRUE, ylim = c(0, 70))
+
+# Visualize 10 top contributions to PCs
+fviz_contrib(pca, choice = "ind", axes = 1, top = 10)
+fviz_contrib(pca, choice = "ind", axes = 2, top = 10)
+
+# Visualize the individuals according to PC1 and PC2
+fviz_pca_ind(pca, repel = TRUE) # Avoid text overlapping
+
+# Visualize the 5 top contributions of the variables to the PCs as a percentage
+  # Note the red dash line indicates the average contribution
+fviz_contrib(pca, choice = "var", axes = 1, top = 5) # on PC1
+fviz_contrib(pca, choice = "var", axes = 2, top = 5) # on PC2
+
+# Visualize the contributions of the variables to the PCs in a correlation circle
+fviz_pca_var(pca, col.var = "black", repel = TRUE) # Avoid text overlapping
+
+# Visualize both variables and individuals in the same graph
+fviz_pca_biplot(pca)
+```
+
+To perform dimensionality reduction, we conducted PCA on all of our variables. We utilized the prcomp function to find the principal components. Beginning, we selected for all numeric variables and scaled them. Next, we compared the percentage of variance explained for each PC in a table. From here, we created a Scree plot to visualize our 13 principal components and its percentage of explained variance. Dimension 1 and Dimension 2 explained 37.8 % and 27.9 % of the variance in the data, respectively. This points to a total of 65.7% of variance in the data explained by these two dimensions. The individual contributors to variance within each principal component were then calculated. Scoring high on the PCs indicates that that PC explains a greater amount of variance across that specific predictor. 
+
+We found that for PC1, the variable ‘frac’ contributed the most to variance explained by that PC and for PC2, the variable ‘Murder’ contributed the most to variance explained. Following that, we visualized the contributions of each variable to the PCs’ in a correlation circle graph. Finally, the variables and individuals were visualized in the same graph. 
+
+### Classification and Cross-Validation
+```{r message=FALSE, warning=FALSE}
+# Subset data to only include Confederate and Union States
+totalDataClassification <- totalDataClassification %>%
+  filter(CivilWar == "C" | CivilWar == "U") %>%
+  mutate(CivilWar = recode(CivilWar, "C" = "0", "U" = "1")) %>%
+  mutate_if(is.numeric, scale) %>%
+  mutate_at("CivilWar", as.numeric)
+
+# Fit the logistic regression model to the data
+fit <- glm(CivilWar ~  expend, data = totalDataClassification, family = "binomial")
+summary(fit)
+
+# Calculate a predicted probability
+log_totalData <- totalDataClassification %>% 
+  mutate(probability = predict(fit, type = "response"),
+         predicted = ifelse(probability > 0.5, 1, 0)) %>%
+  # Give a name to the rows
+  rownames_to_column("state") %>% 
+  select(State, sat, Teen, CivilWar, probability, predicted)
+head(log_totalData)
+
+# Confusion matrix: compare true to predicted condition
+table(log_totalData$CivilWar, log_totalData$predicted)
+
+# ROC curve
+ROC <- ggplot(log_totalData) + 
+  geom_roc(aes(d = CivilWar, m = probability))
+ROC
+
+# Calculate the area under the curve
+calc_auc(ROC)
+
+##### LOOCV
+
+tests <- data.frame()
+
+for(i in 1:nrow(totalDataClassification)){
+  # Create training and test sets
+  train <- totalDataClassification[-i, ] # all observations but i
+  test <- totalDataClassification[i, ]   # observation i
+  
+  # Train model on training set (all but fold i)
+  fit <- glm(CivilWar ~  expend, data = train, family = "binomial")
+  
+  # Compare predicted probability to the truth
+  tests <- rbind(tests, c(predict(fit, newdata = test, type = "response"), 
+                          CivilWar = test$CivilWar))
+  names(tests) <- c("probability","CivilWar")
+}
+
+# Consider the ROC curve for the results on the test datasets
+ROC <- ggplot(tests) + geom_roc(aes(d = CivilWar, m = probability))
+
+# Get diagnostics for fold i (AUC)
+diags_LOOCV <- calc_auc(ROC)$AUC
+
+# Resulting diagnostics for average performance
+diags_LOOCV
+```
+
+To classify our model, we used logistic regression to predict the binary variable “Union” or “Confederate” Civil War status based on the state expenditure for public schools in the dataset. First, we subset the data to only allow for union or confederate state statuses. After doing this, we trained the model using logistic regression, where a given p-value of 0.013 indicated that expenditure was a significant predictor of Civil War status. Next, we used the model to predict Union or Confederate Membership status in the original data. Next, an ROC curve was built, and the AUC was calculated to be 0.974, which indicates that the model was accurate 97.4% of the time.
+
+Following this, we performed leave one out cross validation to assess the average performance of the model across various training and testing sets. After performing this, the average performance was generated to be 0.943, meaning the model was accurate 94.3% of the time across the testing sets.Because the classified and cross-validated values (0.974 and 0.943) were similar, there was no indication of overfitting present.
+
+### Contributions
+All members contributed equally to the analysis and description of the results.
